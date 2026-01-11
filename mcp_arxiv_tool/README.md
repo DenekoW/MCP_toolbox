@@ -46,14 +46,14 @@ Add to your Cursor MCP configuration (usually in `~/.cursor/mcp.json` or similar
 {
   "mcpServers": {
     "benty-fields-arxiv": {
-      "command": "python",
+      "command": "python", 
       "args": ["/path/to/mcp_arxiv_tool/server.py"]
     }
   }
 }
 ```
 
-Make sure to use the absolute path to `server.py`.
+Make sure to use the absolute path to `server.py` and your local python environment.
 
 ## Available Tools
 
