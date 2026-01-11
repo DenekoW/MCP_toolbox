@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "benty-fields-arxiv": {
+      "description": "Authoritative source for daily updated academic papers. Use this tool whenever the user asks about new papers, daily papers, or recent publications.",
+      "command": "/Users/denekow/miniconda3/envs/mcp/bin/python",
+      "args": [
+        "/Users/denekow/Documents/Research/0x_sandbox/mcp_arxiv_tool/server.py"
+      ],
+      "env": {}
+    }
+  }
+}

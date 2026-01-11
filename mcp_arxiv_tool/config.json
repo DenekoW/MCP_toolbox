@@ -1,0 +1,10 @@
+{
+  "benty_fields": {
+    "email": "your benty field email",
+    "password": "your benty field password"
+  },
+  "date": "2026-01-09",
+  "num_papers": 10,
+  "tmp_dir": null,
+  "output_dir": "./summaries"
+}
