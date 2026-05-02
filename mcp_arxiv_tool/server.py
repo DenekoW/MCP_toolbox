@@ -16,6 +16,7 @@ from pdf_processor import PDFProcessor
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+SCHEMA_VERSION = "1.0"
 
 # Initialize server
 app = Server("benty-fields-arxiv")
@@ -24,6 +25,46 @@ app = Server("benty-fields-arxiv")
 _client: BentyFieldsClient | None = None
 _processor: PDFProcessor | None = None
 _config: dict | None = None
+
+
+def _build_success_response(
+    tool: str,
+    data: dict[str, Any],
+    request: dict[str, Any] | None = None,
+    warnings: list[str] | None = None,
+) -> dict[str, Any]:
+    """Build standardized successful response payload."""
+    return {
+        "schema_version": SCHEMA_VERSION,
+        "tool": tool,
+        "success": True,
+        "timestamp": datetime.now().isoformat(),
+        "request": request or {},
+        "warnings": warnings or [],
+        "data": data,
+    }
+
+
+def _build_error_response(
+    tool: str,
+    error_type: str,
+    message: str,
+    request: dict[str, Any] | None = None,
+    details: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Build standardized error response payload."""
+    return {
+        "schema_version": SCHEMA_VERSION,
+        "tool": tool,
+        "success": False,
+        "timestamp": datetime.now().isoformat(),
+        "request": request or {},
+        "error": {
+            "type": error_type,
+            "message": message,
+            "details": details or {},
+        },
+    }
 
 
 def load_config() -> dict:
@@ -86,7 +127,8 @@ async def list_tools() -> list[Tool]:
             name="fetch_daily_papers",
             description="Fetch top N papers for a given date from benty-fields.com. "
                        "Returns paper metadata including title, authors, abstract, and links. "
-                       "If no papers are found for the date, returns a message indicating no updates.",
+                       "If no papers are found for the date, returns a message indicating no updates. "
+                       "Output JSON schema: {schema_version, tool, success, timestamp, request, warnings, data:{date, num_papers_requested, count, papers, message?}}.",
             inputSchema={
                 "type": "object",
                 "properties": {
@@ -106,7 +148,8 @@ async def list_tools() -> list[Tool]:
         ),
         Tool(
             name="download_paper_pdf",
-            description="Download PDF for a specific paper. Returns the path to the downloaded PDF.",
+            description="Download PDF for a specific paper. "
+                       "Output JSON schema: {schema_version, tool, success, timestamp, request, warnings, data:{arxiv_id, pdf_path, exists}}.",
             inputSchema={
                 "type": "object",
                 "properties": {
@@ -124,7 +167,8 @@ async def list_tools() -> list[Tool]:
         ),
         Tool(
             name="extract_pdf_text",
-            description="Extract text from a downloaded PDF file.",
+            description="Extract text from a downloaded PDF file. "
+                       "Output JSON schema: {schema_version, tool, success, timestamp, request, warnings, data:{pdf_path, text_length, text}}.",
             inputSchema={
                 "type": "object",
                 "properties": {
@@ -138,7 +182,8 @@ async def list_tools() -> list[Tool]:
         ),
         Tool(
             name="convert_pdf_to_markdown",
-            description="Convert a PDF file to Markdown format. Better for AI analysis than plain text extraction.",
+            description="Convert a PDF file to Markdown format. Better for AI analysis than plain text extraction. "
+                       "Output JSON schema: {schema_version, tool, success, timestamp, request, warnings, data:{pdf_path, markdown_length, markdown, markdown_path?}}.",
             inputSchema={
                 "type": "object",
                 "properties": {
@@ -158,7 +203,8 @@ async def list_tools() -> list[Tool]:
         Tool(
             name="generate_daily_summary",
             description="Generate a markdown summary document from processed papers. "
-                       "Includes paper metadata and PDF content (converted to Markdown) for AI analysis.",
+                       "Includes paper metadata and PDF content (converted to Markdown) for AI analysis. "
+                       "Output JSON schema: {schema_version, tool, success, timestamp, request, warnings, data:{output_path, papers_count, file_size}}.",
             inputSchema={
                 "type": "object",
                 "properties": {
@@ -219,7 +265,7 @@ async def call_tool(name: str, arguments: dict) -> Sequence[TextContent]:
             
             # Check if no papers found
             if len(papers) == 0:
-                result = {
+                data = {
                     "date": date,
                     "num_papers_requested": num_papers,
                     "count": 0,
@@ -227,12 +273,17 @@ async def call_tool(name: str, arguments: dict) -> Sequence[TextContent]:
                     "message": f"No papers found for date {date}. The date may not have any updates, or it may be a future date."
                 }
             else:
-                result = {
+                data = {
                     "date": date,
                     "num_papers_requested": num_papers,
                     "count": len(papers),
                     "papers": papers
                 }
+            result = _build_success_response(
+                tool=name,
+                data=data,
+                request={"date": date, "num_papers": num_papers},
+            )
             
             return [TextContent(
                 type="text",
@@ -258,6 +309,11 @@ async def call_tool(name: str, arguments: dict) -> Sequence[TextContent]:
                 "pdf_path": str(pdf_path),
                 "exists": pdf_path.exists()
             }
+            result = _build_success_response(
+                tool=name,
+                data=result,
+                request={"arxiv_id": arxiv_id, "pdf_url": pdf_url},
+            )
             
             return [TextContent(
                 type="text",
@@ -275,6 +331,11 @@ async def call_tool(name: str, arguments: dict) -> Sequence[TextContent]:
                 "text_length": len(text),
                 "text": text
             }
+            result = _build_success_response(
+                tool=name,
+                data=result,
+                request={"pdf_path": str(pdf_path)},
+            )
             
             return [TextContent(
                 type="text",
@@ -297,6 +358,11 @@ async def call_tool(name: str, arguments: dict) -> Sequence[TextContent]:
             if save_to_file:
                 md_path = processor.convert_and_save_markdown(pdf_path)
                 result["markdown_path"] = str(md_path)
+            result = _build_success_response(
+                tool=name,
+                data=result,
+                request={"pdf_path": str(pdf_path), "save_to_file": save_to_file},
+            )
             
             return [TextContent(
                 type="text",
@@ -438,6 +504,16 @@ async def call_tool(name: str, arguments: dict) -> Sequence[TextContent]:
                 "papers_count": len(papers),
                 "file_size": output_path.stat().st_size
             }
+            result = _build_success_response(
+                tool=name,
+                data=result,
+                request={
+                    "papers_count": len(papers),
+                    "output_path": str(output_path),
+                    "include_pdf_text": include_pdf_text,
+                    "use_markdown": use_markdown,
+                },
+            )
             
             return [TextContent(
                 type="text",
@@ -449,9 +525,15 @@ async def call_tool(name: str, arguments: dict) -> Sequence[TextContent]:
     
     except Exception as e:
         logger.error(f"Error in tool {name}: {e}", exc_info=True)
+        error_payload = _build_error_response(
+            tool=name,
+            error_type=e.__class__.__name__,
+            message=str(e),
+            request=arguments if isinstance(arguments, dict) else {},
+        )
         return [TextContent(
             type="text",
-            text=json.dumps({"error": str(e)}, indent=2)
+            text=json.dumps(error_payload, indent=2)
         )]
 
 
